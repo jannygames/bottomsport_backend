@@ -1,0 +1,6 @@
+@bottomsport_backend_HostAddress = http://localhost:5251
+
+GET {{bottomsport_backend_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
