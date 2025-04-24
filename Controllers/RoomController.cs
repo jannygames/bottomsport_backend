@@ -19,6 +19,14 @@ public class RoomController : ControllerBase
         _logger = logger;
     }
 
+    // Diagnostic action to log route information
+    [HttpGet("debug")]
+    public IActionResult DebugRoutes()
+    {
+        _logger.LogInformation("Debug route accessed");
+        return Ok(new { message = "Routes registered correctly" });
+    }
+
     [HttpGet]
     public async Task<IActionResult> GetRooms()
     {
@@ -184,6 +192,141 @@ public class RoomController : ControllerBase
         {
             _logger.LogError(ex, "Error creating room");
             return StatusCode(500, new { message = "An error occurred while creating the room", details = ex.Message });
+        }
+    }
+
+    [HttpDelete("{id:int}")]
+    public async Task<IActionResult> DeleteRoom(int id)
+    {
+        try
+        {
+            _logger.LogInformation($"Attempting to delete room with ID: {id}");
+            
+            // Check if user is logged in
+            var sessionUserId = HttpContext.Session.GetInt32("UserId");
+            _logger.LogInformation($"Session UserId: {sessionUserId}");
+            
+            if (!sessionUserId.HasValue)
+            {
+                _logger.LogWarning("User not logged in - no session found");
+                return Unauthorized(new { message = "User not logged in" });
+            }
+
+            using var connection = _databaseService.CreateConnection();
+            await connection.OpenAsync();
+            
+            // Check if room exists and user is the creator
+            var verifyCommand = new MySqlCommand(
+                "SELECT room_creator FROM Rooms WHERE id = @roomId",
+                connection);
+            verifyCommand.Parameters.AddWithValue("@roomId", id);
+            
+            using var reader = await verifyCommand.ExecuteReaderAsync();
+            if (!await reader.ReadAsync())
+            {
+                _logger.LogWarning($"Room with ID {id} not found");
+                return NotFound(new { message = "Room not found" });
+            }
+            
+            var roomCreatorId = reader.GetInt32("room_creator");
+            reader.Close();
+            
+            if (roomCreatorId != sessionUserId.Value)
+            {
+                _logger.LogWarning($"User {sessionUserId.Value} is not the creator of room {id}");
+                return Unauthorized(new { message = "Only the room creator can delete this room" });
+            }
+            
+            // Delete participants first (due to foreign key constraint)
+            var deleteParticipantsCommand = new MySqlCommand(
+                "DELETE FROM RoomParticipants WHERE room_id = @roomId",
+                connection);
+            deleteParticipantsCommand.Parameters.AddWithValue("@roomId", id);
+            await deleteParticipantsCommand.ExecuteNonQueryAsync();
+            
+            // Delete the room
+            var deleteRoomCommand = new MySqlCommand(
+                "DELETE FROM Rooms WHERE id = @roomId",
+                connection);
+            deleteRoomCommand.Parameters.AddWithValue("@roomId", id);
+            await deleteRoomCommand.ExecuteNonQueryAsync();
+            
+            _logger.LogInformation($"Room {id} successfully deleted");
+            
+            return Ok(new { message = "Room deleted successfully" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, $"Error deleting room with ID {id}");
+            return StatusCode(500, new { message = "An error occurred while deleting the room", details = ex.Message });
+        }
+    }
+
+    // Add an alternative delete endpoint with a different route pattern
+    [HttpPost("delete/{id:int}")]
+    public async Task<IActionResult> DeleteRoomAlternative(int id)
+    {
+        try
+        {
+            _logger.LogInformation($"Attempting to delete room with ID: {id} (alternative endpoint)");
+            
+            // Check if user is logged in
+            var sessionUserId = HttpContext.Session.GetInt32("UserId");
+            _logger.LogInformation($"Session UserId: {sessionUserId}");
+            
+            if (!sessionUserId.HasValue)
+            {
+                _logger.LogWarning("User not logged in - no session found");
+                return Unauthorized(new { message = "User not logged in" });
+            }
+
+            using var connection = _databaseService.CreateConnection();
+            await connection.OpenAsync();
+            
+            // Check if room exists and user is the creator
+            var verifyCommand = new MySqlCommand(
+                "SELECT room_creator FROM Rooms WHERE id = @roomId",
+                connection);
+            verifyCommand.Parameters.AddWithValue("@roomId", id);
+            
+            using var reader = await verifyCommand.ExecuteReaderAsync();
+            if (!await reader.ReadAsync())
+            {
+                _logger.LogWarning($"Room with ID {id} not found");
+                return NotFound(new { message = "Room not found" });
+            }
+            
+            var roomCreatorId = reader.GetInt32("room_creator");
+            reader.Close();
+            
+            if (roomCreatorId != sessionUserId.Value)
+            {
+                _logger.LogWarning($"User {sessionUserId.Value} is not the creator of room {id}");
+                return Unauthorized(new { message = "Only the room creator can delete this room" });
+            }
+            
+            // Delete participants first (due to foreign key constraint)
+            var deleteParticipantsCommand = new MySqlCommand(
+                "DELETE FROM RoomParticipants WHERE room_id = @roomId",
+                connection);
+            deleteParticipantsCommand.Parameters.AddWithValue("@roomId", id);
+            await deleteParticipantsCommand.ExecuteNonQueryAsync();
+            
+            // Delete the room
+            var deleteRoomCommand = new MySqlCommand(
+                "DELETE FROM Rooms WHERE id = @roomId",
+                connection);
+            deleteRoomCommand.Parameters.AddWithValue("@roomId", id);
+            await deleteRoomCommand.ExecuteNonQueryAsync();
+            
+            _logger.LogInformation($"Room {id} successfully deleted");
+            
+            return Ok(new { message = "Room deleted successfully" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, $"Error deleting room with ID {id}");
+            return StatusCode(500, new { message = "An error occurred while deleting the room", details = ex.Message });
         }
     }
 } 

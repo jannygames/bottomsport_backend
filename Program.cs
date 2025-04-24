@@ -1,5 +1,8 @@
 using bottomsport_backend.Services;
 using Microsoft.AspNetCore.Http;          // SameSiteMode, CookieSecurePolicy
+using Microsoft.AspNetCore.Routing;       // For route debugging
+using Microsoft.AspNetCore.Mvc.Routing;   // For HttpMethodMetadata
+using System.Linq;                        // For LINQ operations
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -84,6 +87,29 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseAuthorization();
+
+// Log all registered endpoints for debugging
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api/debug/routes"))
+    {
+        var endpointDataSource = app.Services.GetRequiredService<Microsoft.AspNetCore.Routing.EndpointDataSource>();
+        var endpoints = endpointDataSource.Endpoints
+            .OfType<RouteEndpoint>()
+            .Select(e => new
+            {
+                Method = e.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods.FirstOrDefault(),
+                Route = e.RoutePattern.RawText,
+                DisplayName = e.DisplayName
+            })
+            .ToList();
+        
+        await context.Response.WriteAsJsonAsync(endpoints);
+        return;
+    }
+    
+    await next();
+});
 
 app.MapControllers();
 
