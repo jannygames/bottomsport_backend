@@ -69,15 +69,49 @@ public class UserController : ControllerBase
 
             _logger.LogInformation($"Successful login for username: {request.Username}, User ID: {user.Id}");
             
-            // Set session or return token here if using JWT
+            // Clear any existing session
+            HttpContext.Session.Clear();
+            
+            // Set session values
+            _logger.LogInformation($"Setting session values for user {user.Id}");
             HttpContext.Session.SetInt32("UserId", user.Id);
             HttpContext.Session.SetString("Username", user.Username);
+
+            // Verify session was set
+            var sessionUserId = HttpContext.Session.GetInt32("UserId");
+            var sessionUsername = HttpContext.Session.GetString("Username");
+            _logger.LogInformation($"Verifying session - UserId: {sessionUserId}, Username: {sessionUsername}");
+            _logger.LogInformation($"Session ID: {HttpContext.Session.Id}");
+
+            // Log request headers
+            _logger.LogInformation("Request Headers:");
+            foreach (var header in HttpContext.Request.Headers)
+            {
+                _logger.LogInformation($"{header.Key}: {header.Value}");
+            }
+
+            // Log response headers
+            _logger.LogInformation("Response Headers:");
+            foreach (var header in HttpContext.Response.Headers)
+            {
+                _logger.LogInformation($"{header.Key}: {header.Value}");
+            }
+
+            // Force session cookie to be set
+            HttpContext.Response.Cookies.Append(".BottomSport.Session", HttpContext.Session.Id, new CookieOptions
+            {
+                HttpOnly = true,
+                SameSite = SameSiteMode.Lax,
+                Secure = false,
+                IsEssential = true
+            });
 
             return Ok(new
             {
                 id = user.Id,
                 username = user.Username,
-                role = user.Role
+                role = user.Role,
+                sessionId = HttpContext.Session.Id  // Include session ID in response for debugging
             });
         }
         catch (Exception ex)

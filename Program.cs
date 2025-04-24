@@ -9,6 +9,9 @@ builder.Services.AddSession(options =>
     options.IdleTimeout = TimeSpan.FromMinutes(30);
     options.Cookie.HttpOnly = true;
     options.Cookie.IsEssential = true;
+    options.Cookie.SameSite = SameSiteMode.Lax;  // Changed to Lax for better compatibility
+    options.Cookie.SecurePolicy = CookieSecurePolicy.None;  // Set to None for development
+    options.Cookie.Name = ".BottomSport.Session";  // Set a specific cookie name
 });
 
 // Add database service
@@ -49,10 +52,31 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// Important: UseCors must be called before UseRouting and UseAuthorization
-app.UseCors("AllowFrontend");
+// Configure the HTTP request pipeline
 app.UseRouting();
+
+// Use Session BEFORE accessing it in middleware
 app.UseSession();
+
+// Add session debugging middleware
+app.Use(async (context, next) =>
+{
+    Console.WriteLine($"Request Path: {context.Request.Path}");
+    Console.WriteLine($"Session ID: {context.Session.Id}");
+    if (context.Session.TryGetValue("UserId", out byte[] userIdBytes))
+    {
+        var userId = BitConverter.ToInt32(userIdBytes);
+        Console.WriteLine($"User ID in session: {userId}");
+    }
+    else
+    {
+        Console.WriteLine("No User ID in session");
+    }
+    await next();
+});
+
+// CORS should be after UseRouting but before UseAuthorization
+app.UseCors("AllowFrontend");
 app.UseAuthorization();
 
 app.MapControllers();

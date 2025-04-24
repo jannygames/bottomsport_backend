@@ -115,4 +115,9 @@ public class DatabaseService
             throw;
         }
     }
+
+    public MySqlConnection CreateConnection()
+    {
+        return new MySqlConnection(_connectionString);
+    }
 } 
