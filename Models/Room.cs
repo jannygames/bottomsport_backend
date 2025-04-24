@@ -9,20 +9,25 @@ public class Room
     
     [Required]
     [StringLength(100)]
+    [JsonPropertyName("title")]
     public string Title { get; set; } = string.Empty;
     
+    [JsonPropertyName("room_creator")]
     public int RoomCreator { get; set; }
     
     [Required]
+    [JsonPropertyName("min_bet")]
     public float MinBet { get; set; }
     
     [Required]
+    [JsonPropertyName("max_bet")]
     public float MaxBet { get; set; }
     
-    [Required]
-    public string RoomStatus { get; set; } = "active";
+    [JsonPropertyName("room_status")]
+    public string RoomStatus { get; set; } = "active";  // ENUM('active', 'inactive', 'hidden')
     
-    public DateTime CreationDate { get; set; } = DateTime.Now;
+    [JsonPropertyName("creation_date")]
+    public DateTime CreationDate { get; set; } = DateTime.Now.Date;
 }
 
 public class CreateRoomRequest
@@ -39,4 +44,8 @@ public class CreateRoomRequest
     [Required]
     [JsonPropertyName("max_bet")]
     public float MaxBet { get; set; }
+
+    [Required]
+    [JsonPropertyName("UserId")]
+    public int UserId { get; set; }
 } 

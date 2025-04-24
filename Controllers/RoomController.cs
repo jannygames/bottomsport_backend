@@ -42,7 +42,7 @@ public class RoomController : ControllerBase
             
             while (await reader.ReadAsync())
             {
-                rooms.Add(new Room
+                var room = new Room
                 {
                     Id = reader.GetInt32("id"),
                     Title = reader.GetString("title"),
@@ -51,7 +51,9 @@ public class RoomController : ControllerBase
                     MaxBet = reader.GetFloat("max_bet"),
                     RoomStatus = reader.GetString("room_status"),
                     CreationDate = reader.GetDateTime("creation_date")
-                });
+                };
+                _logger.LogInformation($"Read room from database: Id={room.Id}, Title={room.Title}, MinBet={room.MinBet}, MaxBet={room.MaxBet}");
+                rooms.Add(room);
             }
             _logger.LogInformation($"Found {rooms.Count} rooms");
 
@@ -70,66 +72,77 @@ public class RoomController : ControllerBase
         try
         {
             _logger.LogInformation("Attempting to create room...");
-            _logger.LogInformation($"Request data: Title={request.Title}, MinBet={request.MinBet}, MaxBet={request.MaxBet}");
+            _logger.LogInformation($"Request data: Title={request.Title}, MinBet={request.MinBet}, MaxBet={request.MaxBet}, UserId={request.UserId}");
 
-            // Log request headers
-            _logger.LogInformation("Request Headers:");
-            foreach (var header in HttpContext.Request.Headers)
+            // Check if user is logged in
+            var sessionUserId = HttpContext.Session.GetInt32("UserId");
+            _logger.LogInformation($"Session UserId: {sessionUserId}");
+            
+            if (!sessionUserId.HasValue)
             {
-                _logger.LogInformation($"{header.Key}: {header.Value}");
-            }
-
-            // Log cookies
-            _logger.LogInformation("Request Cookies:");
-            foreach (var cookie in HttpContext.Request.Cookies)
-            {
-                _logger.LogInformation($"{cookie.Key}: {cookie.Value}");
-            }
-
-            // Log session state
-            _logger.LogInformation($"Session ID: {HttpContext.Session.Id}");
-            _logger.LogInformation("Session Keys:");
-            foreach (var key in HttpContext.Session.Keys)
-            {
-                _logger.LogInformation($"Key: {key}");
-                if (key == "UserId")
-                {
-                    var bytes = HttpContext.Session.Get(key);
-                    _logger.LogInformation($"UserId bytes length: {bytes?.Length ?? 0}");
-                    if (bytes != null && bytes.Length >= 4)
-                    {
-                        var value = BitConverter.ToInt32(bytes);
-                        _logger.LogInformation($"UserId value: {value}");
-                    }
-                }
-            }
-
-            if (!HttpContext.Session.TryGetValue("UserId", out var userIdBytes))
-            {
-                _logger.LogWarning("User not logged in - no UserId found in session");
+                _logger.LogWarning("User not logged in - no session found");
                 return Unauthorized(new { message = "User not logged in" });
             }
 
-            var userId = BitConverter.ToInt32(userIdBytes);
-            _logger.LogInformation($"User ID from session: {userId}");
+            // Verify that the session user matches the request user
+            if (sessionUserId.Value != request.UserId)
+            {
+                _logger.LogWarning($"Session user ({sessionUserId.Value}) does not match request user ({request.UserId})");
+                return Unauthorized(new { message = "Session user does not match request user" });
+            }
 
             // Verify user exists in database
             using var connection = _databaseService.CreateConnection();
             await connection.OpenAsync();
+            _logger.LogInformation("Database connection opened");
             
             var verifyUserCommand = new MySqlCommand(
                 "SELECT COUNT(*) FROM Users WHERE id = @userId",
                 connection);
-            verifyUserCommand.Parameters.AddWithValue("@userId", userId);
+            verifyUserCommand.Parameters.AddWithValue("@userId", request.UserId);
+            _logger.LogInformation($"Executing query: SELECT COUNT(*) FROM Users WHERE id = {request.UserId}");
             
-            var userExists = Convert.ToInt32(await verifyUserCommand.ExecuteScalarAsync()) > 0;
+            var count = Convert.ToInt32(await verifyUserCommand.ExecuteScalarAsync());
+            _logger.LogInformation($"Query result (count): {count}");
+            var userExists = count > 0;
             _logger.LogInformation($"User exists in database: {userExists}");
 
             if (!userExists)
             {
-                _logger.LogWarning($"User with ID {userId} not found in database");
+                _logger.LogWarning($"User with ID {request.UserId} not found in database");
                 return BadRequest(new { message = "User not found in database" });
             }
+
+            // Create Rooms table if it doesn't exist
+            var createTableCommand = new MySqlCommand(@"
+                CREATE TABLE IF NOT EXISTS Rooms (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    title VARCHAR(100) DEFAULT NULL,
+                    room_creator INT DEFAULT NULL,
+                    min_bet FLOAT DEFAULT NULL,
+                    max_bet FLOAT DEFAULT NULL,
+                    room_status ENUM('active', 'inactive', 'hidden') DEFAULT 'active',
+                    creation_date DATE DEFAULT NULL,
+                    FOREIGN KEY (room_creator) REFERENCES Users(id)
+                )", connection);
+            
+            await createTableCommand.ExecuteNonQueryAsync();
+            _logger.LogInformation("Rooms table created or verified");
+
+            // Create RoomParticipants table if it doesn't exist
+            var createParticipantsTableCommand = new MySqlCommand(@"
+                CREATE TABLE IF NOT EXISTS RoomParticipants (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT DEFAULT NULL,
+                    room_id INT DEFAULT NULL,
+                    is_playing TINYINT(1) DEFAULT NULL,
+                    is_creator TINYINT(1) DEFAULT NULL,
+                    FOREIGN KEY (user_id) REFERENCES Users(id),
+                    FOREIGN KEY (room_id) REFERENCES Rooms(id)
+                )", connection);
+            
+            await createParticipantsTableCommand.ExecuteNonQueryAsync();
+            _logger.LogInformation("RoomParticipants table created or verified");
 
             var command = new MySqlCommand(
                 @"INSERT INTO Rooms (title, room_creator, min_bet, max_bet, room_status, creation_date) 
@@ -138,10 +151,12 @@ public class RoomController : ControllerBase
                 connection);
 
             command.Parameters.AddWithValue("@title", request.Title);
-            command.Parameters.AddWithValue("@roomCreator", userId);
+            command.Parameters.AddWithValue("@roomCreator", request.UserId);
             command.Parameters.AddWithValue("@minBet", request.MinBet);
             command.Parameters.AddWithValue("@maxBet", request.MaxBet);
             command.Parameters.AddWithValue("@creationDate", DateTime.Now.Date);
+
+            _logger.LogInformation($"SQL Parameters: Title={request.Title}, MinBet={request.MinBet}, MaxBet={request.MaxBet}, UserId={request.UserId}");
 
             _logger.LogInformation("Executing room creation query...");
             var roomId = Convert.ToInt32(await command.ExecuteScalarAsync());
@@ -150,10 +165,10 @@ public class RoomController : ControllerBase
             // Add creator as participant
             var participantCommand = new MySqlCommand(
                 @"INSERT INTO RoomParticipants (user_id, room_id, is_playing, is_creator) 
-                  VALUES (@userId, @roomId, false, true)",
+                  VALUES (@userId, @roomId, 0, 1)",
                 connection);
 
-            participantCommand.Parameters.AddWithValue("@userId", userId);
+            participantCommand.Parameters.AddWithValue("@userId", request.UserId);
             participantCommand.Parameters.AddWithValue("@roomId", roomId);
             
             _logger.LogInformation("Adding creator as participant...");

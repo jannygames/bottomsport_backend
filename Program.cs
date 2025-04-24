@@ -1,45 +1,55 @@
 using bottomsport_backend.Services;
+using Microsoft.AspNetCore.Http;          // SameSiteMode, CookieSecurePolicy
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add session support
+// ───────────────────────────────────────── SESSION ─────────────────────────────────────────
 builder.Services.AddDistributedMemoryCache();
+
 builder.Services.AddSession(options =>
 {
     options.IdleTimeout = TimeSpan.FromMinutes(30);
-    options.Cookie.HttpOnly = true;
-    options.Cookie.IsEssential = true;
-    options.Cookie.SameSite = SameSiteMode.Lax;  // Changed to Lax for better compatibility
-    options.Cookie.SecurePolicy = CookieSecurePolicy.None;  // Set to None for development
-    options.Cookie.Name = ".BottomSport.Session";  // Set a specific cookie name
+    options.Cookie.Name       = ".BottomSport.Session";
+    options.Cookie.HttpOnly   = true;
+    options.Cookie.IsEssential= true;
+
+    if (builder.Environment.IsDevelopment())                   // dev: plain HTTP
+    {
+        options.Cookie.SameSite    = SameSiteMode.Lax;         // same-site = ok on localhost
+        options.Cookie.SecurePolicy= CookieSecurePolicy.None;  // do NOT set Secure flag
+    }
+    else                                                       // prod: cross-site / HTTPS
+    {
+        options.Cookie.SameSite    = SameSiteMode.None;        // will travel cross-site
+        options.Cookie.SecurePolicy= CookieSecurePolicy.Always;// Secure required for None
+    }
 });
 
-// Add database service
+// ──────────────────────────────────────── DATABASE ────────────────────────────────────────
 builder.Services.AddScoped<DatabaseService>();
 
-// Add connection string
-var connectionString = builder.Configuration.GetConnectionString("bottomsport") 
-    ?? "Server=localhost;Database=bottomsport;Uid=root;Pwd=;";
-Console.WriteLine($"Using connection string: {connectionString}");
-
+// Fill in the connection string if none is present in appsettings.*
+var connectionString = builder.Configuration.GetConnectionString("bottomsport")
+                    ?? "Server=localhost;Database=bottomsport;Uid=root;Pwd=;";
 builder.Configuration.AddInMemoryCollection(new Dictionary<string, string>
 {
-    {"ConnectionStrings:bottomsport", connectionString}
+    ["ConnectionStrings:bottomsport"] = connectionString
 });
+Console.WriteLine($"Using connection string: {connectionString}");
 
-// Add CORS service
+// ──────────────────────────────────────────  CORS  ─────────────────────────────────────────
+const string FrontendOrigin = "http://localhost:5173";         // adjust for HTTPS if needed
+
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowFrontend",
-        policy =>
-        {
-            policy.WithOrigins("http://localhost:5173")
-                  .AllowAnyHeader()
-                  .AllowAnyMethod()
-                  .AllowCredentials();
-        });
+    options.AddPolicy("Frontend", p => p
+        .WithOrigins(FrontendOrigin)
+        .AllowCredentials()            // send cookies
+        .AllowAnyHeader()
+        .AllowAnyMethod());
 });
 
+// ───────────────────────────────────────── MISC API ────────────────────────────────────────
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -52,32 +62,35 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// Configure the HTTP request pipeline
+// ──────────────────────────────────────── PIPELINE ─────────────────────────────────────────
 app.UseRouting();
 
-// Use Session BEFORE accessing it in middleware
-app.UseSession();
+app.UseCors("Frontend");           // must come BEFORE Session / endpoints
+app.UseSession();                  // cookie now survives
 
-// Add session debugging middleware
-app.Use(async (context, next) =>
+// Optional: only keep the verbose logging in dev
+if (app.Environment.IsDevelopment())
 {
-    Console.WriteLine($"Request Path: {context.Request.Path}");
-    Console.WriteLine($"Session ID: {context.Session.Id}");
-    if (context.Session.TryGetValue("UserId", out byte[] userIdBytes))
+    app.Use(async (ctx, next) =>
     {
-        var userId = BitConverter.ToInt32(userIdBytes);
-        Console.WriteLine($"User ID in session: {userId}");
-    }
-    else
-    {
-        Console.WriteLine("No User ID in session");
-    }
-    await next();
-});
+        Console.WriteLine($"[DEV] {ctx.Request.Method} {ctx.Request.Path} – SessionId {ctx.Session.Id}");
+        Console.WriteLine(
+            ctx.Session.TryGetValue("UserId", out var bytes)
+            ? $"[DEV] UserId: {BitConverter.ToInt32(bytes)}"
+            : "[DEV] No UserId in session");
 
-// CORS should be after UseRouting but before UseAuthorization
-app.UseCors("AllowFrontend");
+        await next();
+    });
+}
+
 app.UseAuthorization();
 
 app.MapControllers();
+
+// Enable HTTPS redirection in prod if you set Secure cookies
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();     // ensures Secure cookies are usable
+}
+
 app.Run();

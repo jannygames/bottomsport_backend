@@ -101,9 +101,11 @@ public class UserController : ControllerBase
             HttpContext.Response.Cookies.Append(".BottomSport.Session", HttpContext.Session.Id, new CookieOptions
             {
                 HttpOnly = true,
-                SameSite = SameSiteMode.Lax,
-                Secure = false,
-                IsEssential = true
+                SameSite = HttpContext.Request.Host.Host == "localhost" ? SameSiteMode.Lax : SameSiteMode.None,
+                Secure = HttpContext.Request.Host.Host != "localhost",
+                IsEssential = true,
+                Path = "/",
+                Expires = DateTimeOffset.Now.AddDays(7)
             });
 
             return Ok(new
