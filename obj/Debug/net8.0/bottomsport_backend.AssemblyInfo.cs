@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("bottomsport_backend")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+3818101022d3b15cd37b6302dfa4e7b17629b300")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+712e00a955bda5d8fd2ad03842027bcf2a93d793")]
 [assembly: System.Reflection.AssemblyProductAttribute("bottomsport_backend")]
 [assembly: System.Reflection.AssemblyTitleAttribute("bottomsport_backend")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
