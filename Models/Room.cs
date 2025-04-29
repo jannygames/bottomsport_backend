@@ -1,51 +1,35 @@
-using System.ComponentModel.DataAnnotations;
-using System.Text.Json.Serialization;
-
 namespace bottomsport_backend.Models;
 
 public class Room
 {
     public int Id { get; set; }
-    
-    [Required]
-    [StringLength(100)]
-    [JsonPropertyName("title")]
     public string Title { get; set; } = string.Empty;
-    
-    [JsonPropertyName("room_creator")]
     public int RoomCreator { get; set; }
-    
-    [Required]
-    [JsonPropertyName("min_bet")]
-    public float MinBet { get; set; }
-    
-    [Required]
-    [JsonPropertyName("max_bet")]
-    public float MaxBet { get; set; }
-    
-    [JsonPropertyName("room_status")]
-    public string RoomStatus { get; set; } = "active";  // ENUM('active', 'inactive', 'hidden')
-    
-    [JsonPropertyName("creation_date")]
+    public double MinBet { get; set; }
+    public double MaxBet { get; set; }
+    public string RoomStatus { get; set; } = "active"; // 'active', 'inactive', 'hidden'
     public DateTime CreationDate { get; set; } = DateTime.Now.Date;
 }
 
+// Request for creating a new room
 public class CreateRoomRequest
 {
-    [Required]
-    [StringLength(100)]
-    [JsonPropertyName("title")]
     public string Title { get; set; } = string.Empty;
-    
-    [Required]
-    [JsonPropertyName("min_bet")]
-    public float MinBet { get; set; }
-    
-    [Required]
-    [JsonPropertyName("max_bet")]
-    public float MaxBet { get; set; }
-
-    [Required]
-    [JsonPropertyName("UserId")]
+    public double MinBet { get; set; }
+    public double MaxBet { get; set; }
     public int UserId { get; set; }
-} 
+}
+
+// Request for validating room code
+public class ValidateRoomCodeRequest
+{
+    public int RoomId { get; set; }
+}
+
+// Request for updating room settings
+public class UpdateRoomSettingsRequest
+{
+    public string Title { get; set; } = string.Empty;
+    public double MinBet { get; set; }
+    public double MaxBet { get; set; }
+}
