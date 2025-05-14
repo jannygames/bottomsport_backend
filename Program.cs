@@ -30,6 +30,7 @@ builder.Services.AddSession(options =>
 
 // ──────────────────────────────────────── DATABASE ────────────────────────────────────────
 builder.Services.AddScoped<DatabaseService>();
+builder.Services.AddScoped<GameService>();
 
 // Fill in the connection string if none is present in appsettings.*
 var connectionString = builder.Configuration.GetConnectionString("bottomsport")
@@ -42,6 +43,12 @@ Console.WriteLine($"Using connection string: {connectionString}");
 
 // ──────────────────────────────────────────  CORS  ─────────────────────────────────────────
 const string FrontendOrigin = "http://localhost:5173";         // adjust for HTTPS if needed
+
+// Add FrontendUrl to configuration
+builder.Configuration.AddInMemoryCollection(new Dictionary<string, string>
+{
+    ["FrontendUrl"] = FrontendOrigin
+});
 
 builder.Services.AddCors(options =>
 {

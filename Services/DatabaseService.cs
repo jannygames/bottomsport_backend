@@ -2,17 +2,20 @@ using MySql.Data.MySqlClient;
 using System.Security.Cryptography;
 using System.Text;
 using bottomsport_backend.Models;
+using Microsoft.Extensions.Logging;
 
 namespace bottomsport_backend.Services;
 
 public class DatabaseService
 {
     private readonly string _connectionString;
+    private readonly ILogger<DatabaseService> _logger;
 
-    public DatabaseService(IConfiguration configuration)
+    public DatabaseService(IConfiguration configuration, ILogger<DatabaseService> logger)
     {
         _connectionString = configuration.GetConnectionString("bottomsport") 
             ?? throw new InvalidOperationException("Connection string 'bottomsport' not found.");
+        _logger = logger;
     }
 
     public async Task<bool> ValidateUserData(string username)
@@ -119,5 +122,52 @@ public class DatabaseService
     public MySqlConnection CreateConnection()
     {
         return new MySqlConnection(_connectionString);
+    }
+
+    public async Task<float> GetUserBalance(int userId)
+    {
+        try
+        {
+            using var connection = new MySqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            var command = new MySqlCommand(
+                "SELECT balance FROM Users WHERE id = @userId",
+                connection);
+            command.Parameters.AddWithValue("@userId", userId);
+
+            var result = await command.ExecuteScalarAsync();
+            return result == DBNull.Value ? 0 : Convert.ToSingle(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, $"Error getting balance for user {userId}");
+            throw;
+        }
+    }
+
+    public async Task UpdateUserBalance(int userId, float amount)
+    {
+        try
+        {
+            using var connection = new MySqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            var command = new MySqlCommand(
+                @"UPDATE Users 
+                  SET balance = balance + @amount 
+                  WHERE id = @userId",
+                connection);
+            
+            command.Parameters.AddWithValue("@amount", amount);
+            command.Parameters.AddWithValue("@userId", userId);
+
+            await command.ExecuteNonQueryAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, $"Error updating balance for user {userId}");
+            throw;
+        }
     }
 } 

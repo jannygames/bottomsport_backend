@@ -63,3 +63,5 @@ C:\Users\danie\Desktop\BottomSport\bottomsport_backend\bin\Debug\net8.0\runtimes
 C:\Users\danie\Desktop\BottomSport\bottomsport_backend\bin\Debug\net8.0\runtimes\win-x64\native\krbcc64.dll
 C:\Users\danie\Desktop\BottomSport\bottomsport_backend\bin\Debug\net8.0\runtimes\browser\lib\net8.0\System.Text.Encodings.Web.dll
 C:\Users\danie\Desktop\BottomSport\bottomsport_backend\bin\Debug\net8.0\runtimes\win\lib\net8.0\System.Windows.Extensions.dll
+C:\Users\danie\Desktop\BottomSport\bottomsport_backend\bin\Debug\net8.0\Newtonsoft.Json.dll
+C:\Users\danie\Desktop\BottomSport\bottomsport_backend\bin\Debug\net8.0\Stripe.net.dll
