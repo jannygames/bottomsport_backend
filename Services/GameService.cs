@@ -312,9 +312,22 @@ public class GameService
                 throw new Exception("Game already completed");
             }
             
-            // Calculate winnings
-            decimal winnings = game.BetAmount * game.FinalMultiplier;
-            _logger.LogInformation($"Game {gameId} - Calculated winnings: {winnings} (Bet: {game.BetAmount} × Multiplier: {game.FinalMultiplier})");
+            // Calculate winnings based on lanes completed
+            decimal winnings;
+            
+            // Check if player has made any moves
+            if (game.LanesCompleted > 0)
+            {
+                // Apply multiplier only if player has moved forward
+                winnings = game.BetAmount * game.FinalMultiplier;
+                _logger.LogInformation($"Game {gameId} - Calculated winnings with multiplier: {winnings} (Bet: {game.BetAmount} × Multiplier: {game.FinalMultiplier})");
+            }
+            else
+            {
+                // Return only the original bet amount if no moves were made
+                winnings = game.BetAmount;
+                _logger.LogInformation($"Game {gameId} - No lanes completed, returning original bet amount: {winnings}");
+            }
             
             using var connection = _databaseService.CreateConnection();
             await connection.OpenAsync();
@@ -559,5 +572,177 @@ public class GameService
         
         var result = await command.ExecuteScalarAsync();
         return result != DBNull.Value ? Convert.ToDecimal(result) : 0;
+    }
+
+    // Add this method to retrieve leaderboard data
+    public async Task<List<LeaderboardEntry>> GetLeaderboard()
+    {
+        _logger.LogInformation("Fetching Mission Crossable leaderboard data");
+        
+        var result = new List<LeaderboardEntry>();
+        
+        try
+        {
+            using var connection = _databaseService.CreateConnection();
+            await connection.OpenAsync();
+            
+            // Join missioncrossablegames with users to get usernames
+            // Only include games that were completed (is_complete = true) and won (is_won = true)
+            // Order by winnings (payout) in descending order
+            var command = new MySqlCommand(
+                @"SELECT u.username, g.bet_amount, g.payout as win_amount, g.prize_multiplier as max_multiplier 
+                  FROM missioncrossablegames g
+                  JOIN users u ON g.user_id = u.id
+                  WHERE g.is_complete = true AND g.is_won = true
+                  ORDER BY g.payout DESC
+                  LIMIT 10",
+                connection);
+            
+            using var reader = await command.ExecuteReaderAsync();
+            
+            while (await reader.ReadAsync())
+            {
+                // Get column ordinals first
+                int usernameOrdinal = reader.GetOrdinal("username");
+                int betAmountOrdinal = reader.GetOrdinal("bet_amount");
+                int winAmountOrdinal = reader.GetOrdinal("win_amount");
+                int maxMultiplierOrdinal = reader.GetOrdinal("max_multiplier");
+                
+                result.Add(new LeaderboardEntry
+                {
+                    Username = reader.GetString(usernameOrdinal),
+                    BetAmount = Convert.ToDecimal(reader.GetFloat(betAmountOrdinal)),
+                    WinAmount = Convert.ToDecimal(reader.GetFloat(winAmountOrdinal)),
+                    MaxMultiplier = Convert.ToDecimal(reader.GetFloat(maxMultiplierOrdinal))
+                });
+            }
+            
+            _logger.LogInformation($"Retrieved {result.Count} leaderboard entries");
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving leaderboard data");
+            throw;
+        }
+    }
+
+    // Add the GetUserStats method to retrieve game statistics for a user
+    public async Task<UserGameStats> GetUserStats(int userId)
+    {
+        _logger.LogInformation($"Retrieving game statistics for user {userId}");
+        
+        var stats = new UserGameStats();
+        
+        try
+        {
+            using var connection = _databaseService.CreateConnection();
+            await connection.OpenAsync();
+            
+            // Get game statistics summary
+            var summaryCommand = new MySqlCommand(
+                @"SELECT 
+                    COUNT(*) as total_games,
+                    SUM(CASE WHEN is_won = 1 THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE WHEN is_won = 0 AND is_complete = 1 THEN 1 ELSE 0 END) as losses,
+                    SUM(bet_amount) as total_bet,
+                    MAX(bet_amount) as biggest_bet,
+                    MAX(CASE WHEN is_won = 1 THEN payout ELSE 0 END) as biggest_win,
+                    MIN(CASE WHEN is_won = 1 AND payout > 0 THEN payout ELSE NULL END) as smallest_win,
+                    AVG(prize_multiplier) as avg_multiplier
+                  FROM missioncrossablegames
+                  WHERE user_id = @userId",
+                connection);
+            
+            summaryCommand.Parameters.AddWithValue("@userId", userId);
+            
+            using var reader = await summaryCommand.ExecuteReaderAsync();
+            
+            if (await reader.ReadAsync())
+            {
+                // Get column ordinals first
+                int totalGamesOrdinal = reader.GetOrdinal("total_games");
+                int winsOrdinal = reader.GetOrdinal("wins");
+                int lossesOrdinal = reader.GetOrdinal("losses");
+                int totalBetOrdinal = reader.GetOrdinal("total_bet");
+                int biggestBetOrdinal = reader.GetOrdinal("biggest_bet");
+                int biggestWinOrdinal = reader.GetOrdinal("biggest_win");
+                int smallestWinOrdinal = reader.GetOrdinal("smallest_win");
+                int avgMultiplierOrdinal = reader.GetOrdinal("avg_multiplier");
+                
+                stats.TotalGames = reader.GetInt32(totalGamesOrdinal);
+                stats.Wins = reader.GetInt32(winsOrdinal);
+                stats.Losses = reader.GetInt32(lossesOrdinal);
+                stats.TotalBet = Convert.ToDecimal(reader.GetFloat(totalBetOrdinal));
+                stats.BiggestBet = Convert.ToDecimal(reader.GetFloat(biggestBetOrdinal));
+                
+                if (!reader.IsDBNull(biggestWinOrdinal))
+                    stats.BiggestWin = Convert.ToDecimal(reader.GetFloat(biggestWinOrdinal));
+                
+                if (!reader.IsDBNull(smallestWinOrdinal))
+                    stats.SmallestWin = Convert.ToDecimal(reader.GetFloat(smallestWinOrdinal));
+                
+                if (!reader.IsDBNull(avgMultiplierOrdinal))
+                    stats.AverageMultiplier = Convert.ToDecimal(reader.GetFloat(avgMultiplierOrdinal));
+                
+                // Calculate win rate
+                stats.WinRate = stats.TotalGames > 0 ? (decimal)stats.Wins / stats.TotalGames : 0;
+            }
+            
+            reader.Close();
+            
+            // Get game history
+            var historyCommand = new MySqlCommand(
+                @"SELECT 
+                    m.game_num,
+                    m.game_date,
+                    g.bet_amount,
+                    m.winnings,
+                    g.prize_multiplier,
+                    m.result
+                  FROM mcstats m
+                  JOIN missioncrossablegames g ON m.mission_game_id = g.id
+                  WHERE g.user_id = @userId
+                  ORDER BY m.game_date DESC, m.game_num DESC
+                  LIMIT 20",
+                connection);
+            
+            historyCommand.Parameters.AddWithValue("@userId", userId);
+            
+            using var historyReader = await historyCommand.ExecuteReaderAsync();
+            
+            while (await historyReader.ReadAsync())
+            {
+                // Get column ordinals first
+                int gameNumOrdinal = historyReader.GetOrdinal("game_num");
+                int gameDateOrdinal = historyReader.GetOrdinal("game_date");
+                int betAmountOrdinal = historyReader.GetOrdinal("bet_amount");
+                int winningsOrdinal = historyReader.GetOrdinal("winnings");
+                int prizeMultiplierOrdinal = historyReader.GetOrdinal("prize_multiplier");
+                int resultOrdinal = historyReader.GetOrdinal("result");
+                
+                var gameItem = new GameHistoryItem
+                {
+                    GameNum = historyReader.GetInt32(gameNumOrdinal),
+                    Date = historyReader.GetDateTime(gameDateOrdinal).ToString("yyyy-MM-dd"),
+                    BetAmount = Convert.ToDecimal(historyReader.GetFloat(betAmountOrdinal)),
+                    Multiplier = Convert.ToDecimal(historyReader.GetFloat(prizeMultiplierOrdinal)),
+                    Result = historyReader.GetString(resultOrdinal)
+                };
+                
+                if (!historyReader.IsDBNull(winningsOrdinal))
+                    gameItem.WinAmount = Convert.ToDecimal(historyReader.GetFloat(winningsOrdinal));
+                
+                stats.GameHistory.Add(gameItem);
+            }
+            
+            _logger.LogInformation($"Retrieved statistics for user {userId}: {stats.TotalGames} games, {stats.Wins} wins");
+            return stats;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, $"Error retrieving game statistics for user {userId}");
+            throw;
+        }
     }
 } 

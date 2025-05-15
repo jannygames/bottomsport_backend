@@ -81,6 +81,21 @@ public class CashoutResult
     public decimal NewBalance { get; set; }
 }
 
+public class LeaderboardEntry
+{
+    [JsonPropertyName("username")]
+    public string Username { get; set; } = string.Empty;
+    
+    [JsonPropertyName("betAmount")]
+    public decimal BetAmount { get; set; }
+    
+    [JsonPropertyName("winAmount")]
+    public decimal WinAmount { get; set; }
+    
+    [JsonPropertyName("maxMultiplier")]
+    public decimal MaxMultiplier { get; set; }
+}
+
 public class DifficultySettings
 {
     public string Name { get; set; } = string.Empty;
@@ -113,4 +128,58 @@ public class DifficultySettings
             }}
         };
     }
+}
+
+public class UserGameStats
+{
+    [JsonPropertyName("totalGames")]
+    public int TotalGames { get; set; }
+    
+    [JsonPropertyName("wins")]
+    public int Wins { get; set; }
+    
+    [JsonPropertyName("losses")]
+    public int Losses { get; set; }
+    
+    [JsonPropertyName("winRate")]
+    public decimal WinRate { get; set; }
+    
+    [JsonPropertyName("totalBet")]
+    public decimal TotalBet { get; set; }
+    
+    [JsonPropertyName("biggestBet")]
+    public decimal BiggestBet { get; set; }
+    
+    [JsonPropertyName("biggestWin")]
+    public decimal BiggestWin { get; set; }
+    
+    [JsonPropertyName("smallestWin")]
+    public decimal SmallestWin { get; set; }
+    
+    [JsonPropertyName("averageMultiplier")]
+    public decimal AverageMultiplier { get; set; }
+    
+    [JsonPropertyName("gameHistory")]
+    public List<GameHistoryItem> GameHistory { get; set; } = new List<GameHistoryItem>();
+}
+
+public class GameHistoryItem
+{
+    [JsonPropertyName("gameNum")]
+    public int GameNum { get; set; }
+    
+    [JsonPropertyName("date")]
+    public string Date { get; set; } = string.Empty;
+    
+    [JsonPropertyName("betAmount")]
+    public decimal BetAmount { get; set; }
+    
+    [JsonPropertyName("winAmount")]
+    public decimal WinAmount { get; set; }
+    
+    [JsonPropertyName("multiplier")]
+    public decimal Multiplier { get; set; }
+    
+    [JsonPropertyName("result")]
+    public string Result { get; set; } = string.Empty;
 } 

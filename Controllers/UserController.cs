@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using System.ComponentModel.DataAnnotations;
 using bottomsport_backend.Models;
 using bottomsport_backend.Services;
 
@@ -9,11 +10,16 @@ namespace bottomsport_backend.Controllers;
 public class UserController : ControllerBase
 {
     private readonly DatabaseService _databaseService;
+    private readonly GameService _gameService;
     private readonly ILogger<UserController> _logger;
 
-    public UserController(DatabaseService databaseService, ILogger<UserController> logger)
+    public UserController(
+        DatabaseService databaseService, 
+        GameService gameService, 
+        ILogger<UserController> logger)
     {
         _databaseService = databaseService;
+        _gameService = gameService;
         _logger = logger;
     }
 
@@ -138,4 +144,100 @@ public class UserController : ControllerBase
             return StatusCode(500, new { message = "An error occurred during logout" });
         }
     }
+
+    [HttpPost("cashout")]
+    public async Task<IActionResult> CashoutFunds([FromBody] FundsCashoutRequest request)
+    {
+        try
+        {
+            if (request.Amount <= 0)
+            {
+                return BadRequest(new { error = "Amount must be greater than zero." });
+            }
+
+            // Get current user balance
+            decimal currentBalance = await _gameService.GetUserBalance(request.UserId);
+            
+            // Check if user has sufficient balance
+            if (currentBalance < request.Amount)
+            {
+                return BadRequest(new { error = $"Insufficient balance. Your current balance is ${currentBalance}." });
+            }
+
+            // Perform cashout by updating user balance
+            await ProcessCashout(request.UserId, request.Amount);
+            
+            // Get new balance after cashout
+            decimal newBalance = await _gameService.GetUserBalance(request.UserId);
+            
+            return Ok(new { 
+                success = true, 
+                message = "Cashout successful", 
+                amount = request.Amount,
+                newBalance = newBalance
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, $"Error processing cashout for user {request.UserId}");
+            return BadRequest(new { error = "An error occurred while processing your cashout." });
+        }
+    }
+
+    private async Task ProcessCashout(int userId, decimal amount)
+    {
+        using var connection = _databaseService.CreateConnection();
+        await connection.OpenAsync();
+        
+        // Start a transaction
+        using var transaction = await connection.BeginTransactionAsync();
+        
+        try
+        {
+            // Create command to update user balance
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = "UPDATE users SET balance = balance - @amount WHERE id = @userId";
+            
+            // Add parameters
+            var amountParam = command.CreateParameter();
+            amountParam.ParameterName = "@amount";
+            amountParam.Value = amount;
+            command.Parameters.Add(amountParam);
+            
+            var userIdParam = command.CreateParameter();
+            userIdParam.ParameterName = "@userId";
+            userIdParam.Value = userId;
+            command.Parameters.Add(userIdParam);
+            
+            // Execute command
+            int rowsAffected = await command.ExecuteNonQueryAsync();
+            
+            if (rowsAffected == 0)
+            {
+                throw new Exception($"Failed to update balance for user {userId}.");
+            }
+            
+            // Commit transaction
+            await transaction.CommitAsync();
+            
+            _logger.LogInformation($"Cashout successful: User {userId}, Amount ${amount}");
+        }
+        catch (Exception)
+        {
+            // Rollback transaction on failure
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+}
+
+public class FundsCashoutRequest
+{
+    [Required]
+    public int UserId { get; set; }
+    
+    [Required]
+    [Range(0.01, double.MaxValue, ErrorMessage = "Amount must be greater than zero.")]
+    public decimal Amount { get; set; }
 } 

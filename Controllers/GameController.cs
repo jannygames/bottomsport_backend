@@ -107,4 +107,43 @@ public class GameController : ControllerBase
             return BadRequest(new { error = ex.Message });
         }
     }
+    
+    [HttpGet("leaderboard")]
+    public async Task<IActionResult> GetLeaderboard()
+    {
+        try
+        {
+            _logger.LogInformation("Leaderboard endpoint called");
+            var leaderboardData = await _gameService.GetLeaderboard();
+            return Ok(leaderboardData);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving leaderboard data");
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+    
+    // Test endpoint to verify routing
+    [HttpGet("leaderboard-test")]
+    public IActionResult LeaderboardTest()
+    {
+        return Ok(new { message = "Leaderboard test endpoint working!" });
+    }
+
+    [HttpGet("stats/{userId}")]
+    public async Task<IActionResult> GetUserStats(int userId)
+    {
+        try
+        {
+            _logger.LogInformation($"Stats endpoint called for user {userId}");
+            var userStats = await _gameService.GetUserStats(userId);
+            return Ok(userStats);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, $"Error retrieving stats for user {userId}");
+            return BadRequest(new { error = ex.Message });
+        }
+    }
 } 
